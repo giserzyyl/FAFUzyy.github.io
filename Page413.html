@@ -1,0 +1,329 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
+    <title>WebGis应用</title>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/4.29/esri/themes/light/main.css" />
+    <script src="https://js.arcgis.com/4.29/"></script>
+
+    <style>
+      html,
+      body,
+      #viewDiv {
+        padding: 0;
+        margin: 0;
+        height: 100%;
+        width: 100%;
+      }
+      #header {
+      height: 30px;
+      background-color: #00a7d0;
+      color: #fff;
+      text-align: center;
+      line-height: 30px;
+    }
+      #mapView {
+      height: 80vh;
+    }
+    #basemapGallery {
+      position: relative; /* 修改为relative */
+      top: 20px; /* 调整top值 */
+      z-index: 50;
+    }
+    #legend {
+      position: relative; /* 修改为relative */
+      top: 20px; /* 调整top值 */
+      z-index: 50;
+    }
+    #searchWidget {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 50;
+    }
+    #layerList {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      z-index: 50;
+    }
+    </style>
+<body>
+  <div id="header">全国各省教育经费统计</div>
+  
+    <script>
+      require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/layers/FeatureLayer",
+        "esri/Graphic",
+        "esri/geometry/geometryEngine",
+        "esri/widgets/Search",
+        "esri/widgets/Legend",
+        "esri/widgets/LayerList",
+        "esri/widgets/ScaleBar",
+        "esri/widgets/CoordinateConversion"
+        
+        
+      ], (Map, MapView, FeatureLayer,Graphic,geometryEngine,Search,Legend,LayerList,ScaleBar,CoordinateConversion) => {
+        // Create the Map with an initial basemap
+       // Initialize FeatureLayer
+        const featureLayer = new FeatureLayer({
+            url: "https://www.geosceneonline.cn/server/rest/services/Hosted/全国各省教育经费/FeatureServer"
+        });
+        // Layer used to draw graphics returned
+          var activeGraphic;
+
+
+
+        // Initializing map
+        const map = new Map({
+            basemap: "topo-vector",
+            layers: [featureLayer]
+            
+        });
+
+        
+        // Create the MapView and reference the Map in the instance
+        const view = new MapView({
+          container: "viewDiv",
+          map: map,
+          center: [120, 38.485],
+          zoom: 4
+        });
+        
+       
+        const searchWidget = new Search({
+          view: view
+        });
+        // Add the search widget to the top right corner of the view
+        view.ui.add(searchWidget, {
+          position: "top-right"
+        });
+        
+      
+       view.when(() => {
+          const layerList = new LayerList({
+            view: view
+          });
+
+          // Add widget to the top right corner of the view
+          view.ui.add(layerList, "top-right");
+        });
+        const legend = new Legend({
+        view: view // 确保view是你的MapView或SceneView实例
+        });
+        view.ui.add(legend, "bottom-right"); // 将图例添加到视图的右下角
+      
+        const scaleBar = new ScaleBar({
+        view: view
+        });
+        // Add widget to the bottom left corner of the view
+        view.ui.add(scaleBar, {
+        position: "bottom-left"
+       });
+       
+     
+       var coordsWidget = document.createElement("div");
+       coordsWidget.id = "coordsWidget";
+       coordsWidget.className = "esri-widget esri-component";
+       coordsWidget.style.padding = "7px 15px 5px";
+
+       view.ui.add(coordsWidget, "bottom-left");
+       function showCoordinates(pt) {
+       var coords =
+       "Lat/Lon " +
+       pt.latitude.toFixed(3) +
+       " " +
+       pt.longitude.toFixed(3) +
+       " | Scale 1:" +
+       Math.round(view.scale * 1) / 1 +
+       " | Zoom " +
+       view.zoom;
+       coordsWidget.innerHTML = coords;
+       }
+       view.watch("stationary", function (isStationary) {
+       showCoordinates(view.center);
+       });
+
+       view.on("pointer-move", function (evt) {
+       showCoordinates(view.toMap({ x: evt.x, y: evt.y }));
+      });
+      
+     
+
+    var activeGraphic;
+       
+    function findNearestGraphic(event) {
+    return view.hitTest(event).then(function (response) {
+    var graphic;
+    // Get the Trail graphics only
+    if (response.results.length) {
+      graphic = response.results.filter(function (result) {
+        return result.graphic.layer === featureLayer;
+      })[0].graphic;
+    }
+    // Only return new graphics are found
+    if (graphic) {
+      if (!activeGraphic || activeGraphic.attributes.OBJECTID !== graphic.attributes.OBJECTID) {
+        return graphic;
+      } else {
+        return null;
+      }
+    } else {
+      return null;
+    }
+  });
+}
+
+var bufferGraphic;
+
+function drawBuffer(bufferGeometry) {
+  view.graphics.remove(bufferGraphic);
+  bufferGraphic = new Graphic({
+    geometry: bufferGeometry,
+    symbol: {
+      type: "simple-fill",
+      color: "rgba(0,0,0,0)",
+      outline: {
+        color: "rgba(0,0,0,.5)",
+        width: 1
+      }
+    }
+  });
+  view.graphics.add(bufferGraphic);
+}
+
+view.on("pointer-move", function (event) {
+  findNearestGraphic(event).then(function (graphic) {
+    if (graphic) {
+      activeGraphic = graphic;
+      var buffer = geometryEngine.geodesicBuffer(activeGraphic.geometry, 0.25, "miles");
+      drawBuffer(buffer);
+    }
+  });
+});
+
+view.on("pointer-move", function (event) {
+  findNearestGraphic(event).then(function (graphic) {
+    if (graphic) {
+      activeGraphic = graphic;
+      var buffer = geometryEngine.geodesicBuffer(activeGraphic.geometry, 0.25, "miles");
+      drawBuffer(buffer);
+    }
+  });
+  //*** ADD ***//
+  if (bufferGraphic) {
+    var currentPoint = view.toMap(event);
+    var intersects = geometryEngine.intersects(bufferGraphic.geometry, currentPoint);
+    var symbol = bufferGraphic.symbol.clone();
+    if (intersects) {
+      symbol.color = "rgba(0,0,0,.15)"; // Highlight
+    } else {
+      symbol.color = "rgba(0,0,0,0)"; // Transparent
+    }
+    bufferGraphic.symbol = symbol;
+  }
+});
+
+var lineGraphic;
+
+function drawLine(point, point2) {
+  view.graphics.remove(lineGraphic);
+  lineGraphic = new Graphic({
+    geometry: {
+      type: "polyline",
+      paths: [
+        [point.longitude, point.latitude],
+        [point2.longitude, point2.latitude]
+      ]
+    },
+    symbol: {
+      type: "simple-line",
+      color: "#333",
+      width: 1
+    }
+  });
+  view.graphics.add(lineGraphic);
+}
+   view.on("pointer-move", function (event) {
+  findNearestGraphic(event).then(function (graphic) {
+    if (graphic) {
+      activeGraphic = graphic;
+      var buffer = geometryEngine.geodesicBuffer(activeGraphic.geometry, 0.25, "miles");
+      drawBuffer(buffer);
+    }
+  });
+  if (bufferGraphic) {
+    var cursorPoint = view.toMap(event);
+    var intersects = geometryEngine.intersects(bufferGraphic.geometry, cursorPoint);
+    var symbol = bufferGraphic.symbol.clone();
+    if (intersects) {
+      symbol.color = "rgba(0,0,0,.15)";
+    } else {
+      symbol.color = "rgba(0,0,0,0)";
+    }
+    bufferGraphic.symbol = symbol;
+    //*** ADD ***//
+    var vertexResult = geometryEngine.nearestVertex(bufferGraphic.geometry, cursorPoint);
+    var closestPoint = vertexResult.coordinate;
+    drawLine(cursorPoint, closestPoint);
+  }
+});
+var textGraphic;
+
+function drawText(point, distance) {
+  view.graphics.remove(textGraphic);
+  textGraphic = new Graphic({
+    geometry: point,
+    symbol: {
+      type: "text",
+      text: distance.toFixed(2) + " miles",
+      color: "black",
+      font: {
+        size: 12
+      },
+      haloColor: "white",
+      haloSize: 1
+    }
+  });
+  view.graphics.add(textGraphic);
+}
+
+view.on("pointer-move", function (event) {
+  findNearestGraphic(event).then(function (graphic) {
+    if (graphic) {
+      activeGraphic = graphic;
+      var buffer = geometryEngine.geodesicBuffer(activeGraphic.geometry, 0.25, "miles");
+      drawBuffer(buffer);
+    }
+  });
+  if (bufferGraphic) {
+    var cursorPoint = view.toMap(event);
+    var intersects = geometryEngine.intersects(bufferGraphic.geometry, cursorPoint);
+    var symbol = bufferGraphic.symbol.clone();
+    if (intersects) {
+      symbol.color = "rgba(0,0,0,.15)";
+    } else {
+      symbol.color = "rgba(0,0,0,0)";
+    }
+    bufferGraphic.symbol = symbol;
+    var vertexResult = geometryEngine.nearestVertex(bufferGraphic.geometry, cursorPoint);
+    var closestPoint = vertexResult.coordinate;
+    drawLine(cursorPoint, closestPoint);
+    //*** ADD ***//
+    var distance = geometryEngine.geodesicLength(lineGraphic.geometry, "miles");
+    drawText(cursorPoint, distance);
+  }
+});
+
+
+
+    });
+    </script>
+  </head>
+  <body>
+    <div id="viewDiv"></div>
+  </body>
+</html>
